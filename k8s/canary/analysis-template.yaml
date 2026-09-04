@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: resilience-platform-health
+  namespace: resilience-platform
+  labels:
+    app.kubernetes.io/name: resilience-platform
+    app.kubernetes.io/component: api
+spec:
+  metrics:
+    - name: container-health
+      interval: 30s
+      count: 3
+      failureLimit: 1
+      successCondition: result == "ok"
+      provider:
+        web:
+          url: http://resilience-platform-api.resilience-platform.svc.cluster.local/health
+          timeoutSeconds: 5
+          jsonPath: "{$.status}"
+    - name: readiness
+      interval: 30s
+      count: 3
+      failureLimit: 1
+      successCondition: result == "ready"
+      provider:
+        web:
+          url: http://resilience-platform-api.resilience-platform.svc.cluster.local/ready
+          timeoutSeconds: 5
+          jsonPath: "{$.status}"

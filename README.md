@@ -152,3 +152,32 @@ After calling API endpoints, traces appear in Jaeger under:
 
 - `resilience-platform-api`
 - `resilience-platform-worker`
+
+## Kubernetes Progressive Delivery
+
+The standard Kubernetes manifests are in `k8s/`.
+An optional Argo Rollouts canary overlay is available in `k8s/canary/`.
+
+Prerequisite for canary deployments:
+
+```powershell
+kubectl apply -n argo-rollouts -f https://github.com/argoproj/argo-rollouts/releases/latest/download/install.yaml
+```
+
+Deploy the canary overlay:
+
+```powershell
+kubectl apply -k k8s/canary
+```
+
+The canary rollout shifts traffic in stages and runs `/health` and `/ready` checks through an Argo Rollouts
+`AnalysisTemplate`. Failed analysis checks abort the rollout and keep the previous stable revision available for rollback.
+
+## Telegram CI Notifications
+
+GitHub Actions sends a Telegram notification after push workflows when these repository secrets are configured:
+
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_CHAT_ID`
+
+If either secret is missing, the notification step is skipped without failing the pipeline.
