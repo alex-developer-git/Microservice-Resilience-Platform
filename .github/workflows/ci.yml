@@ -121,7 +121,7 @@ jobs:
         run: |
           kubectl -n resilience-platform rollout status deployment/postgres --timeout=180s
           kubectl -n resilience-platform rollout status deployment/redis --timeout=180s
-          kubectl -n resilience-platform rollout status deployment/rabbitmq --timeout=180s
+          kubectl -n resilience-platform rollout status deployment/rabbitmq --timeout=300s
 
       - name: Wait for API deployment
         run: kubectl -n resilience-platform rollout status deployment/resilience-platform-api --timeout=240s
@@ -147,6 +147,9 @@ jobs:
         run: |
           kubectl -n resilience-platform get all
           kubectl -n resilience-platform describe pods
+          kubectl -n resilience-platform logs deployment/postgres --tail=200 || true
+          kubectl -n resilience-platform logs deployment/redis --tail=200 || true
+          kubectl -n resilience-platform logs deployment/rabbitmq --tail=200 || true
           kubectl -n resilience-platform logs deployment/resilience-platform-api -c api --tail=200 || true
           kubectl -n resilience-platform logs deployment/resilience-platform-api -c wait-for-dependencies --tail=200 || true
 
