@@ -1,0 +1,10 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: resilience-platform-selfsigned
+  namespace: resilience-platform
+  labels:
+    app.kubernetes.io/name: resilience-platform
+    app.kubernetes.io/component: api
+spec:
+  selfSigned: {}

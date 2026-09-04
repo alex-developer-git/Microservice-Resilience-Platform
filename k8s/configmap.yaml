@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: resilience-platform-config
+  namespace: resilience-platform
+  labels:
+    app.kubernetes.io/name: resilience-platform
+    app.kubernetes.io/component: api
+data:
+  APP_NAME: "Microservice Resilience Platform"
+  ENVIRONMENT: "production"
+  LOG_LEVEL: "INFO"
+  CELERY_TASK_NAME: "resilience_platform.process_event"
+  OTEL_ENABLED: "true"
+  OTEL_SERVICE_NAME: "resilience-platform-api"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger-collector.observability.svc.cluster.local:4317"
+  OTEL_PROPAGATORS: "tracecontext,baggage"

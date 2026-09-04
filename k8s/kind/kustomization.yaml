@@ -1,0 +1,29 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../namespace.yaml
+  - ../configmap.yaml
+  - test-secret.yaml
+  - test-dependencies.yaml
+  - ../serviceaccount.yaml
+  - ../service.yaml
+  - ../deployment.yaml
+
+patches:
+  - target:
+      kind: ConfigMap
+      name: resilience-platform-config
+    patch: |-
+      - op: replace
+        path: /data/ENVIRONMENT
+        value: test
+      - op: replace
+        path: /data/OTEL_ENABLED
+        value: "false"
+  - target:
+      kind: Deployment
+      name: resilience-platform-api
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1

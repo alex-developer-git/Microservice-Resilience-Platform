@@ -1,0 +1,159 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: resilience-platform-api
+  namespace: resilience-platform
+  labels:
+    app.kubernetes.io/name: resilience-platform
+    app.kubernetes.io/component: api
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: resilience-platform
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: resilience-platform
+        app.kubernetes.io/component: api
+    spec:
+      serviceAccountName: resilience-platform
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: resilience-platform
+                    app.kubernetes.io/component: api
+                topologyKey: kubernetes.io/hostname
+      initContainers:
+        - name: wait-for-dependencies
+          image: resilience-platform:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - python
+            - -c
+            - |
+              import os
+              import socket
+              import sys
+              import time
+              from urllib.parse import urlparse
+
+              checks = {
+                  "DATABASE_URL": 5432,
+                  "REDIS_URL": 6379,
+                  "CELERY_BROKER_URL": 5672,
+              }
+
+              for env_name, default_port in checks.items():
+                  raw_url = os.getenv(env_name)
+                  if not raw_url:
+                      print(f"{env_name} is not set", file=sys.stderr)
+                      sys.exit(1)
+
+                  parsed = urlparse(raw_url)
+                  host = parsed.hostname
+                  port = parsed.port or default_port
+                  if not host:
+                      print(f"{env_name} does not contain a host", file=sys.stderr)
+                      sys.exit(1)
+
+                  for attempt in range(1, 31):
+                      try:
+                          with socket.create_connection((host, port), timeout=2):
+                              print(f"{env_name} dependency is reachable at {host}:{port}")
+                              break
+                      except OSError as exc:
+                          if attempt == 30:
+                              print(f"{env_name} dependency is not reachable at {host}:{port}: {exc}", file=sys.stderr)
+                              sys.exit(1)
+                          time.sleep(2)
+          envFrom:
+            - configMapRef:
+                name: resilience-platform-config
+            - secretRef:
+                name: resilience-platform-secrets
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      containers:
+        - name: api
+          image: resilience-platform:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: resilience-platform-config
+            - secretRef:
+                name: resilience-platform-secrets
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi

@@ -1,0 +1,22 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: resilience-platform-api
+  namespace: resilience-platform
+  labels:
+    app.kubernetes.io/name: resilience-platform
+    app.kubernetes.io/component: api
+spec:
+  secretName: resilience-platform-api-tls
+  duration: 2160h
+  renewBefore: 360h
+  subject:
+    organizations:
+      - Microservice Resilience Platform
+  commonName: api.resilience-platform.local
+  dnsNames:
+    - api.resilience-platform.local
+  issuerRef:
+    name: resilience-platform-selfsigned
+    kind: Issuer
+    group: cert-manager.io
