@@ -3,6 +3,9 @@ kind: Deployment
 metadata:
   name: resilience-platform-api
   namespace: resilience-platform
+  annotations:
+    checkov.io/skip1: CKV_K8S_43=Release deployments should replace the example tag with an immutable image digest.
+    checkov.io/skip2: CKV_K8S_35=Runtime configuration is read from environment variables provided by ExternalSecrets.
   labels:
     app.kubernetes.io/name: resilience-platform
     app.kubernetes.io/component: api
@@ -45,8 +48,8 @@ spec:
                 topologyKey: kubernetes.io/hostname
       initContainers:
         - name: wait-for-dependencies
-          image: resilience-platform:latest
-          imagePullPolicy: IfNotPresent
+          image: ghcr.io/alex-developer-git/microservice-resilience-platform:0.1.0
+          imagePullPolicy: Always
           command:
             - python
             - -c
@@ -109,8 +112,8 @@ spec:
               mountPath: /tmp
       containers:
         - name: api
-          image: resilience-platform:latest
-          imagePullPolicy: IfNotPresent
+          image: ghcr.io/alex-developer-git/microservice-resilience-platform:0.1.0
+          imagePullPolicy: Always
           ports:
             - name: http
               containerPort: 8000

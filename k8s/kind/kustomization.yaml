@@ -9,6 +9,11 @@ resources:
   - ../service.yaml
   - ../deployment.yaml
 
+images:
+  - name: ghcr.io/alex-developer-git/microservice-resilience-platform
+    newName: resilience-platform
+    newTag: latest
+
 patches:
   - target:
       kind: ConfigMap
@@ -27,3 +32,9 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 1
+      - op: replace
+        path: /spec/template/spec/initContainers/0/imagePullPolicy
+        value: IfNotPresent
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent

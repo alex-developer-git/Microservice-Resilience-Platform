@@ -3,6 +3,9 @@ kind: Job
 metadata:
   name: resilience-platform-db-migrations
   namespace: resilience-platform
+  annotations:
+    checkov.io/skip1: CKV_K8S_43=Release deployments should replace the example tag with an immutable image digest.
+    checkov.io/skip2: CKV_K8S_35=Runtime configuration is read from environment variables provided by ExternalSecrets.
   labels:
     app.kubernetes.io/name: resilience-platform
     app.kubernetes.io/component: db-migrations
@@ -27,8 +30,8 @@ spec:
           type: RuntimeDefault
       containers:
         - name: alembic
-          image: resilience-platform:latest
-          imagePullPolicy: IfNotPresent
+          image: ghcr.io/alex-developer-git/microservice-resilience-platform:0.1.0
+          imagePullPolicy: Always
           command:
             - alembic
             - upgrade

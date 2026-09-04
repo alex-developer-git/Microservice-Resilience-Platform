@@ -8,6 +8,7 @@ resources:
   - issuer.yaml
   - certificate.yaml
   - service.yaml
+  - networkpolicy.yaml
   - ingress.yaml
   - migration-job.yaml
   - cleanup-cronjob.yaml

@@ -2,6 +2,7 @@
 coverage.xml
 trivy-results.json
 htmlcov/
+build/
 
 .env
 .env.*

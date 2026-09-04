@@ -90,12 +90,51 @@ jobs:
           name: coverage-report
           path: coverage.xml
 
+  kubernetes-security:
+    name: Kubernetes Security
+    runs-on: ubuntu-latest
+    needs:
+      - code-quality
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Render Kubernetes manifests
+        run: |
+          mkdir -p build/security
+          kubectl kustomize k8s --load-restrictor=LoadRestrictionsNone > build/security/k8s-rendered.yaml
+          kubectl kustomize k8s/kind --load-restrictor=LoadRestrictionsNone > build/security/k8s-kind-rendered.yaml
+
+      - name: Validate Kubernetes schemas with kubeconform
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/work" \
+            -w /work \
+            ghcr.io/yannh/kubeconform:latest \
+              -strict \
+              -ignore-missing-schemas \
+              -summary \
+              build/security/k8s-rendered.yaml \
+              build/security/k8s-kind-rendered.yaml
+
+      - name: Scan Kubernetes manifests with Checkov
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/work" \
+            -w /work \
+            bridgecrew/checkov:latest \
+              -f build/security/k8s-rendered.yaml \
+              --framework kubernetes \
+              --quiet
+
   k8s-integration:
     name: Kubernetes Integration Tests
     runs-on: ubuntu-latest
     needs:
       - code-quality
       - unit-tests
+      - kubernetes-security
     timeout-minutes: 20
 
     steps:
@@ -159,6 +198,7 @@ jobs:
     needs:
       - code-quality
       - unit-tests
+      - kubernetes-security
       - k8s-integration
     permissions:
       contents: read
