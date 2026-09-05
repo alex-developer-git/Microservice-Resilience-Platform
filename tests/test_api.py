@@ -12,6 +12,27 @@ def test_container_health_endpoint() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+    assert response.headers["X-Correlation-ID"]
+
+
+def test_container_health_endpoint_preserves_correlation_id() -> None:
+    """Verify caller-provided correlation IDs are returned for tracing."""
+    client = TestClient(app)
+
+    response = client.get("/health", headers={"X-Correlation-ID": "trace-123"})
+
+    assert response.status_code == 200
+    assert response.headers["X-Correlation-ID"] == "trace-123"
+
+
+def test_container_health_endpoint_replaces_invalid_correlation_id() -> None:
+    """Verify invalid caller-provided correlation IDs are replaced."""
+    client = TestClient(app)
+
+    response = client.get("/health", headers={"X-Correlation-ID": "invalid id"})
+
+    assert response.status_code == 200
+    assert response.headers["X-Correlation-ID"] != "invalid id"
 
 
 def test_readiness_endpoint_checks_dependencies(api_state: object) -> None:

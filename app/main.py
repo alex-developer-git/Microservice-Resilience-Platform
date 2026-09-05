@@ -1,7 +1,9 @@
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
+from uuid import uuid4
 
 import httpx
 from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect, status
@@ -14,7 +16,7 @@ from app.config import Settings, get_settings
 from app.errors import AppError
 from app.events import CeleryEventPublisher, EventPublisher, RealtimeEventPublisher
 from app.health import HealthChecker
-from app.logging_config import configure_logging, log_extra
+from app.logging_config import configure_logging, log_extra, reset_correlation_id, set_correlation_id
 from app.metrics import MetricStore
 from app.models import CircuitBreakerSnapshot, HealthCheckResult, ServiceCreate, ServiceResponse, StatusEvent
 from app.storage import PostgresServiceRepository, ServiceRepository
@@ -22,6 +24,7 @@ from app.tracing import configure_tracing
 from app.websocket import WebSocketStatusManager
 
 logger = logging.getLogger(__name__)
+CORRELATION_ID_HEADER = "X-Correlation-ID"
 
 
 class AppState:
@@ -95,6 +98,48 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="Microservice Resilience Platform", lifespan=lifespan)
 configure_tracing(app, get_settings())
+
+
+@app.middleware("http")
+async def correlation_id_middleware(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+    """Attach a correlation ID to request logs and responses."""
+    correlation_id = _request_correlation_id(request)
+    token = set_correlation_id(correlation_id)
+    started_at = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        duration_ms = (time.perf_counter() - started_at) * 1000
+        logger.exception(
+            "request_failed",
+            extra=log_extra(method=request.method, path=request.url.path, duration_ms=round(duration_ms, 2)),
+        )
+        reset_correlation_id(token)
+        raise
+
+    duration_ms = (time.perf_counter() - started_at) * 1000
+    response.headers[CORRELATION_ID_HEADER] = correlation_id
+    logger.info(
+        "request_completed",
+        extra=log_extra(
+            method=request.method,
+            path=request.url.path,
+            status_code=response.status_code,
+            duration_ms=round(duration_ms, 2),
+        ),
+    )
+    reset_correlation_id(token)
+    return response
+
+
+def _request_correlation_id(request: Request) -> str:
+    """Return a safe caller-provided correlation ID or generate a new one."""
+    correlation_id = request.headers.get(CORRELATION_ID_HEADER)
+    if correlation_id and 1 <= len(correlation_id) <= 128:
+        allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.:/")
+        if all(character in allowed for character in correlation_id):
+            return correlation_id
+    return str(uuid4())
 
 
 def get_app_state(request: Request) -> AppState:

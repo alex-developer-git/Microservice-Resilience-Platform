@@ -41,6 +41,13 @@ spec:
       labels:
         app.kubernetes.io/name: resilience-platform
         app.kubernetes.io/component: api
+      annotations:
+        logging.openai.com/format: json
+        co.elastic.logs/enabled: "true"
+        co.elastic.logs/json.keys_under_root: "true"
+        co.elastic.logs/json.add_error_key: "true"
+        promtail.io/scrape: "true"
+        promtail.io/json: "true"
     spec:
       serviceAccountName: resilience-platform
       automountServiceAccountToken: false
