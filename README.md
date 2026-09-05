@@ -168,15 +168,6 @@ docker compose --profile logging up --build
 
 Promtail reads Docker container logs from stdout and forwards parsed JSON fields to Loki at `http://localhost:3100`.
 
-Start local ELK log collection:
-
-```powershell
-docker compose --profile elk up --build
-```
-
-Filebeat reads Docker container logs from stdout and forwards parsed JSON fields to Elasticsearch at
-`http://localhost:9200`. Kibana is available at `http://localhost:5601`.
-
 ## Kubernetes Progressive Delivery
 
 The standard Kubernetes manifests are in `k8s/`.

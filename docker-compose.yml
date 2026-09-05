@@ -204,50 +204,6 @@ services:
     networks:
       - observability
 
-  elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
-    profiles:
-      - elk
-    environment:
-      discovery.type: single-node
-      xpack.security.enabled: "false"
-      ES_JAVA_OPTS: -Xms512m -Xmx512m
-    ports:
-      - "9200:9200"
-    volumes:
-      - elasticsearch_data:/usr/share/elasticsearch/data
-    networks:
-      - observability
-
-  kibana:
-    image: docker.elastic.co/kibana/kibana:8.15.3
-    profiles:
-      - elk
-    environment:
-      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
-    ports:
-      - "5601:5601"
-    depends_on:
-      - elasticsearch
-    networks:
-      - observability
-
-  filebeat:
-    image: docker.elastic.co/beats/filebeat:8.15.3
-    profiles:
-      - elk
-    user: root
-    command: filebeat -e --strict.perms=false
-    volumes:
-      - ./monitoring/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    depends_on:
-      - elasticsearch
-      - kibana
-    networks:
-      - observability
-
 volumes:
   postgres_data:
   redis_data:
@@ -256,7 +212,6 @@ volumes:
   grafana_data:
   loki_data:
   promtail_positions:
-  elasticsearch_data:
 
 networks:
   backend:
