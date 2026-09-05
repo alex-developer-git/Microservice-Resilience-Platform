@@ -9,7 +9,8 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
 
 WORKDIR /build
 
-RUN apk add --no-cache --virtual .build-deps \
+RUN apk upgrade --no-cache \
+    && apk add --no-cache --virtual .build-deps \
         build-base \
         linux-headers
 
@@ -41,7 +42,8 @@ ENV PATH="/opt/venv/bin:${PATH}" \
 
 WORKDIR /app
 
-RUN addgroup -g "${APP_GID}" -S app \
+RUN apk upgrade --no-cache \
+    && addgroup -g "${APP_GID}" -S app \
     && adduser -u "${APP_UID}" -S -D -H -G app app \
     && mkdir -p /app /tmp/.cache \
     && chown -R app:app /app /tmp/.cache \
