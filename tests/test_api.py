@@ -92,7 +92,7 @@ def test_alertmanager_webhook_broadcasts_alert(api_state: object) -> None:
         "/alerts/alertmanager",
         json={
             "receiver": "resilience-platform-webhook",
-            "groupKey": "{}:{alertname=\"CircuitBreakerOpen\", service_id=\"svc-1\"}",
+            "groupKey": '{}:{alertname="CircuitBreakerOpen", service_id="svc-1"}',
             "alerts": [
                 {
                     "status": "firing",
