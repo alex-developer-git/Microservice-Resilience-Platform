@@ -63,6 +63,11 @@ class MetricStore:
             ["service_id"],
             registry=self._registry,
         )
+        self._health_check_probes = Counter(
+            "health_check_probes",
+            "Number of uncached outbound health check probes started.",
+            registry=self._registry,
+        )
         self._health_checks = Counter(
             "health_checks",
             "Number of health checks by service and status.",
@@ -121,6 +126,10 @@ class MetricStore:
     def record_cache_miss(self, service_id: str) -> None:
         """Record a health check cache miss."""
         self._cache_misses.labels(service_id=service_id).inc()
+
+    def record_health_check_probe(self) -> None:
+        """Increment the per-pod probe counter used for autoscaling."""
+        self._health_check_probes.inc()
 
     def record_health_check(self, result: HealthCheckResult) -> None:
         """Record health check counters, latency, and circuit state."""

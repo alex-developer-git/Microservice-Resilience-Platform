@@ -1,0 +1,23 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: resilience-platform-api
+  namespace: resilience-platform
+  labels:
+    app.kubernetes.io/name: resilience-platform
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: resilience-platform
+spec:
+  namespaceSelector:
+    matchNames:
+      - resilience-platform
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: resilience-platform
+      app.kubernetes.io/component: api
+  endpoints:
+    - port: http
+      path: /metrics
+      scheme: http
+      interval: 15s
+      scrapeTimeout: 10s

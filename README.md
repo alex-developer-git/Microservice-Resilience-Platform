@@ -78,6 +78,7 @@ Core Prometheus metrics:
 - `monitored_services`
 - `enabled_services`
 - `health_checks_total`
+- `health_check_probes_total`
 - `health_check_latency_ms`
 - `health_check_latency_seconds`
 - `service_health_status`
@@ -217,6 +218,63 @@ kubectl apply -k k8s/canary
 
 The canary rollout shifts traffic in stages and runs `/health` and `/ready` checks through an Argo Rollouts
 `AnalysisTemplate`. Failed analysis checks abort the rollout and keep the previous stable revision available for rollback.
+The canary overlay starts with five replicas so its initial 20% step can assign one pod to the canary version. Its HPA
+scales the Rollout between 5 and 10 replicas.
+
+## Kubernetes Custom Metric Autoscaling
+
+The HPA scales the API using CPU and the per-pod `health_checks_per_second` custom metric. The application exports the
+zero-initialized `health_check_probes_total` counter for every pod. It counts uncached outbound health probes when they
+start. Prometheus Adapter converts the counter to a two-minute per-second rate and publishes it through the Kubernetes
+Custom Metrics API.
+
+Install the pinned Prometheus stack. Its values select ServiceMonitors from the `monitoring` and
+`resilience-platform` namespaces. The pinned chart requires Kubernetes 1.25 or newer:
+
+```powershell
+helm upgrade --install kube-prometheus-stack oci://ghcr.io/prometheus-community/charts/kube-prometheus-stack `
+  --version 89.2.3 `
+  --namespace monitoring `
+  --create-namespace `
+  --values infra/kube-prometheus-stack/values.yaml
+```
+
+Deploy either the standard manifests or the canary overlay, then add the API ServiceMonitor:
+
+```powershell
+kubectl apply -k k8s
+kubectl apply -k k8s/observability
+```
+
+For a canary deployment, use `kubectl apply -k k8s/canary` instead of `kubectl apply -k k8s`.
+
+Install the pinned Prometheus Adapter chart. The configured Prometheus URL assumes the release name and namespace from
+the preceding command:
+
+```powershell
+helm upgrade --install prometheus-adapter oci://ghcr.io/prometheus-community/charts/prometheus-adapter `
+  --version 5.3.0 `
+  --namespace monitoring `
+  --values infra/prometheus-adapter/values.yaml
+```
+
+The CPU metric also requires Metrics Server. Verify that it is available before testing the HPA:
+
+```powershell
+kubectl top pods -n resilience-platform
+```
+
+Verify that the adapter returns one custom-metric value for each API pod and that the HPA has no unknown metrics:
+
+```powershell
+kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1/namespaces/resilience-platform/pods/*/health_checks_per_second"
+kubectl describe hpa -n resilience-platform resilience-platform-api
+kubectl get hpa -n resilience-platform resilience-platform-api --watch
+```
+
+Generate uncached health checks above the configured average of two probes per second per pod for at least two minutes.
+Confirm that the HPA increases replicas, respects its upper limit, and returns to its minimum after the five-minute
+scale-down stabilization window.
 
 ## Telegram CI Notifications
 

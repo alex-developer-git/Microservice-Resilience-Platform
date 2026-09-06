@@ -5,6 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.health import HealthChecker
+from app.metrics import MetricStore
 from app.models import CircuitState, ServiceCreate
 from tests.fakes import FakeServiceRepository
 
@@ -29,6 +30,7 @@ async def test_health_check_records_success(
 async def test_health_check_uses_cached_result(
     repository: FakeServiceRepository,
     health_checker: HealthChecker,
+    metrics: MetricStore,
 ) -> None:
     service = await repository.create(ServiceCreate(name="catalog", url="https://catalog.example.com"))
 
@@ -40,6 +42,7 @@ async def test_health_check_uses_cached_result(
     assert first.cached is False
     assert second.cached is True
     assert health_checker._send_health_request.call_count == 1
+    assert "health_check_probes_total 1.0" in metrics.render_prometheus().decode()
 
 
 @pytest.mark.asyncio

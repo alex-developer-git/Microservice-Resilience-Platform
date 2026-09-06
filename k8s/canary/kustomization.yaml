@@ -28,3 +28,9 @@ patches:
       - op: replace
         path: /spec/scaleTargetRef/kind
         value: Rollout
+      - op: replace
+        path: /spec/minReplicas
+        value: 5
+      - op: replace
+        path: /spec/maxReplicas
+        value: 10

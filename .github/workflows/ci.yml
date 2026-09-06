@@ -100,12 +100,27 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Validate monitoring chart values
+        run: |
+          helm template kube-prometheus-stack oci://ghcr.io/prometheus-community/charts/kube-prometheus-stack \
+            --version 89.2.3 \
+            --namespace monitoring \
+            --values infra/kube-prometheus-stack/values.yaml > /dev/null
+          helm template prometheus-adapter oci://ghcr.io/prometheus-community/charts/prometheus-adapter \
+            --version 5.3.0 \
+            --namespace monitoring \
+            --values infra/prometheus-adapter/values.yaml > /dev/null
+
       - name: Render Kubernetes manifests
         run: |
           mkdir -p build/security
           kubectl kustomize k8s --load-restrictor=LoadRestrictionsNone > build/security/k8s-rendered.yaml
           kubectl kustomize k8s/canary --load-restrictor=LoadRestrictionsNone > build/security/k8s-canary-rendered.yaml
           kubectl kustomize k8s/kind --load-restrictor=LoadRestrictionsNone > build/security/k8s-kind-rendered.yaml
+          kubectl kustomize k8s/observability --load-restrictor=LoadRestrictionsNone > build/security/k8s-observability-rendered.yaml
 
       - name: Validate Kubernetes schemas with kubeconform
         run: |
@@ -118,7 +133,8 @@ jobs:
               -summary \
               build/security/k8s-rendered.yaml \
               build/security/k8s-canary-rendered.yaml \
-              build/security/k8s-kind-rendered.yaml
+              build/security/k8s-kind-rendered.yaml \
+              build/security/k8s-observability-rendered.yaml
 
       - name: Scan Kubernetes manifests with Checkov
         run: |
@@ -128,6 +144,7 @@ jobs:
             bridgecrew/checkov:latest \
               -f build/security/k8s-rendered.yaml \
               -f build/security/k8s-canary-rendered.yaml \
+              -f build/security/k8s-observability-rendered.yaml \
               --framework kubernetes \
               --quiet
 

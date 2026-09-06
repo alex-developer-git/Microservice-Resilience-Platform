@@ -23,6 +23,7 @@ spec:
     - type: Pods
       pods:
         metric:
+          # Prometheus Adapter derives this from rate(health_check_probes_total[2m]).
           name: health_checks_per_second
         target:
           type: AverageValue

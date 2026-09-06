@@ -1,0 +1,30 @@
+replicas: 2
+metricsRelistInterval: 30s
+
+prometheus:
+  url: http://kube-prometheus-stack-prometheus.monitoring.svc
+  port: 9090
+
+rules:
+  default: false
+  custom:
+    - seriesQuery: 'health_check_probes_total{namespace!="",pod!=""}'
+      resources:
+        overrides:
+          namespace:
+            resource: namespace
+          pod:
+            resource: pod
+      name:
+        matches: "^health_check_probes_total$"
+        as: health_checks_per_second
+      metricsQuery: >-
+        sum(rate(<<.Series>>{<<.LabelMatchers>>}[2m])) by (<<.GroupBy>>)
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi

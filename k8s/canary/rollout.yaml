@@ -10,7 +10,7 @@ metadata:
     app.kubernetes.io/name: resilience-platform
     app.kubernetes.io/component: api
 spec:
-  replicas: 2
+  replicas: 5
   revisionHistoryLimit: 5
   rollbackWindow:
     revisions: 3

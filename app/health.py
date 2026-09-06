@@ -98,6 +98,7 @@ class HealthChecker:
         error: str | None = None
         try:
             await self._target_validator(target_url)
+            self._metrics.record_health_check_probe()
             response = await self._send_health_request(target_url, service.timeout_seconds)
             status_code = response.status_code
             healthy = 200 <= status_code < 300

@@ -4,6 +4,14 @@ from app.metrics import MetricStore
 from app.models import CircuitState, HealthCheckResult
 
 
+def test_autoscaling_probe_metric_is_initialized_at_zero() -> None:
+    metrics = MetricStore()
+
+    output = metrics.render_prometheus().decode()
+
+    assert "health_check_probes_total 0.0" in output
+
+
 def test_metric_store_renders_prometheus_client_metrics() -> None:
     metrics = MetricStore()
     metrics.record_http_request("GET", "/health/{service_id}", 200, 0.123)
@@ -12,6 +20,7 @@ def test_metric_store_renders_prometheus_client_metrics() -> None:
     metrics.record_manual_trip("svc-1", CircuitState.CLOSED)
     metrics.record_cache_hit("svc-1")
     metrics.record_cache_miss("svc-1")
+    metrics.record_health_check_probe()
     metrics.record_health_check(
         HealthCheckResult(
             service_id="svc-1",
@@ -34,6 +43,7 @@ def test_metric_store_renders_prometheus_client_metrics() -> None:
     assert 'health_checks_total{service_id="svc-1",status="healthy"} 1.0' in output
     assert 'health_check_cache_hits_total{service_id="svc-1"} 1.0' in output
     assert 'health_check_cache_misses_total{service_id="svc-1"} 1.0' in output
+    assert "health_check_probes_total 1.0" in output
     assert 'health_check_latency_ms{service_id="svc-1"} 42.5' in output
     assert 'health_check_latency_seconds_count{service_id="svc-1"} 1.0' in output
     assert 'service_health_status{service_id="svc-1"} 1.0' in output
