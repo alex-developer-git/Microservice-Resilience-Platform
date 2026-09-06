@@ -44,8 +44,10 @@ class HealthChecker:
         if use_cache:
             cached = await self._cache.get(service_id)
             if cached is not None:
+                self._metrics.record_cache_hit(service_id)
                 logger.info("health_check_cache_hit", extra=log_extra(service_id=service_id))
                 return cached
+            self._metrics.record_cache_miss(service_id)
 
         circuit_snapshot = self._circuit_breakers.before_request(service)
         result = await self._probe(service, circuit_snapshot.state)
@@ -54,6 +56,7 @@ class HealthChecker:
             snapshot = self._circuit_breakers.record_success(service)
         else:
             snapshot = self._circuit_breakers.record_failure(service)
+        self._metrics.record_circuit_transition(service.id, circuit_snapshot.state, snapshot.state)
         result = result.model_copy(update={"circuit_state": snapshot.state})
 
         await self._cache.set(result, service.cache_ttl_seconds)

@@ -66,7 +66,10 @@ def test_register_service_and_metrics(api_state: object) -> None:
 
     metrics_response = client.get("/metrics")
     assert metrics_response.status_code == 200
+    assert 'http_requests_total{method="POST",path="/register-service",status_code="201"} 1.0' in metrics_response.text
     assert "registered_services_total 1" in metrics_response.text
+    assert "monitored_services 1" in metrics_response.text
+    assert "enabled_services 1" in metrics_response.text
     assert "circuit_breaker_manual_trips_total 1" in metrics_response.text
 
 

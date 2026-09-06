@@ -85,6 +85,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     state = build_state(settings)
     app.state.container = state
     await state.repository.init()
+    await _record_service_inventory(state)
     logger.info("application_started", extra=log_extra(environment=settings.environment))
     try:
         yield
@@ -110,6 +111,7 @@ async def correlation_id_middleware(request: Request, call_next: Callable[[Reque
         response = await call_next(request)
     except Exception:
         duration_ms = (time.perf_counter() - started_at) * 1000
+        _record_http_metrics(request, status.HTTP_500_INTERNAL_SERVER_ERROR, duration_ms / 1000)
         logger.exception(
             "request_failed",
             extra=log_extra(method=request.method, path=request.url.path, duration_ms=round(duration_ms, 2)),
@@ -118,6 +120,7 @@ async def correlation_id_middleware(request: Request, call_next: Callable[[Reque
         raise
 
     duration_ms = (time.perf_counter() - started_at) * 1000
+    _record_http_metrics(request, response.status_code, duration_ms / 1000)
     response.headers[CORRELATION_ID_HEADER] = correlation_id
     logger.info(
         "request_completed",
@@ -140,6 +143,35 @@ def _request_correlation_id(request: Request) -> str:
         if all(character in allowed for character in correlation_id):
             return correlation_id
     return str(uuid4())
+
+
+def _record_http_metrics(request: Request, status_code: int, duration_seconds: float) -> None:
+    """Record HTTP metrics when the application state has been initialized."""
+    try:
+        metrics = request.app.state.container.metrics
+    except AttributeError:
+        return
+    metrics.record_http_request(request.method, _route_path(request), status_code, duration_seconds)
+
+
+def _route_path(request: Request) -> str:
+    """Return the FastAPI route template for stable Prometheus labels."""
+    route = request.scope.get("route")
+    path = getattr(route, "path", None)
+    if isinstance(path, str):
+        return path
+    return request.url.path
+
+
+async def _record_service_inventory(state: AppState) -> None:
+    """Refresh service inventory business metrics."""
+    if not hasattr(state.metrics, "record_service_inventory"):
+        return
+    services = await state.repository.list()
+    state.metrics.record_service_inventory(
+        total=len(services),
+        enabled=sum(1 for service in services if service.enabled),
+    )
 
 
 def get_app_state(request: Request) -> AppState:
@@ -205,6 +237,7 @@ async def register_service(request: Request, payload: ServiceCreate) -> ServiceR
     state = get_app_state(request)
     record = await state.repository.create(payload)
     state.metrics.record_service_registered()
+    await _record_service_inventory(state)
     event = StatusEvent(
         event_type="service_registered",
         service_id=record.id,
@@ -227,8 +260,9 @@ async def trip_circuit_breaker(service_id: str, request: Request) -> CircuitBrea
     """Manually open a service circuit breaker."""
     state = get_app_state(request)
     await state.repository.get(service_id)
+    previous_state = state.circuit_breakers.snapshot(service_id).state
     snapshot = state.circuit_breakers.trip(service_id)
-    state.metrics.record_manual_trip(service_id)
+    state.metrics.record_manual_trip(service_id, previous_state)
     await state.events.publish(
         StatusEvent(
             event_type="circuit_breaker_tripped",

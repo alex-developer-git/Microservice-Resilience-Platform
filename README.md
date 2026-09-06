@@ -70,6 +70,24 @@ Read Prometheus metrics:
 curl.exe "http://127.0.0.1:8000/metrics"
 ```
 
+Core Prometheus metrics:
+
+- `http_requests_total`
+- `http_request_duration_seconds`
+- `registered_services_total`
+- `monitored_services`
+- `enabled_services`
+- `health_checks_total`
+- `health_check_latency_ms`
+- `health_check_latency_seconds`
+- `service_health_status`
+- `health_check_cache_hits_total`
+- `health_check_cache_misses_total`
+- `circuit_breaker_state`
+- `circuit_breaker_open_total`
+- `circuit_breaker_transitions_total`
+- `circuit_breaker_manual_trips_total`
+
 WebSocket status stream:
 
 ```text
@@ -146,6 +164,9 @@ Services:
 - Grafana: `http://127.0.0.1:3000` (`admin` / `admin`)
 - Jaeger UI: `http://127.0.0.1:16686`
 - RabbitMQ UI: `http://127.0.0.1:15672` (`resilience` / `resilience`)
+
+Grafana automatically provisions the `Microservice Resilience Platform` dashboard with API latency, API error rate,
+health check error rate, service inventory, cache activity, and circuit breaker state panels.
 
 OpenTelemetry tracing is enabled in Docker Compose with OTLP export to Jaeger.
 After calling API endpoints, traces appear in Jaeger under:
