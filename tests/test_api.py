@@ -73,6 +73,51 @@ def test_register_service_and_metrics(api_state: object) -> None:
     assert "circuit_breaker_manual_trips_total 1" in metrics_response.text
 
 
+def test_alertmanager_webhook_broadcasts_alert(api_state: object) -> None:
+    """Verify Alertmanager webhook payloads are forwarded to status clients."""
+
+    class BroadcastRecorder:
+        def __init__(self) -> None:
+            self.payloads: list[dict[str, object]] = []
+
+        async def broadcast(self, payload: dict[str, object]) -> None:
+            self.payloads.append(payload)
+
+    broadcaster = BroadcastRecorder()
+    api_state.websocket_manager = broadcaster
+    app.state.container = api_state
+    client = TestClient(app)
+
+    response = client.post(
+        "/alerts/alertmanager",
+        json={
+            "receiver": "resilience-platform-webhook",
+            "groupKey": "{}:{alertname=\"CircuitBreakerOpen\", service_id=\"svc-1\"}",
+            "alerts": [
+                {
+                    "status": "firing",
+                    "labels": {
+                        "alertname": "CircuitBreakerOpen",
+                        "service_id": "svc-1",
+                        "severity": "critical",
+                    },
+                    "annotations": {
+                        "summary": "Circuit breaker is open for service svc-1",
+                    },
+                    "startsAt": "2026-09-06T12:00:00Z",
+                    "fingerprint": "abc123",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json() == {"received": 1, "forwarded": 1}
+    assert broadcaster.payloads[0]["event_type"] == "alertmanager_alert"
+    assert broadcaster.payloads[0]["service_id"] == "svc-1"
+    assert broadcaster.payloads[0]["payload"]["labels"]["alertname"] == "CircuitBreakerOpen"
+
+
 def test_unknown_service_returns_structured_error(api_state: object) -> None:
     """Verify missing services return a structured error."""
     assert isinstance(api_state.repository, FakeServiceRepository)

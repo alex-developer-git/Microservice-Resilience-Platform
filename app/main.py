@@ -2,7 +2,7 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
+from typing import Any, AsyncIterator
 from uuid import uuid4
 
 import httpx
@@ -272,6 +272,62 @@ async def trip_circuit_breaker(service_id: str, request: Request) -> CircuitBrea
     )
     logger.warning("circuit_breaker_tripped", extra=log_extra(service_id=service_id))
     return snapshot
+
+
+@app.post("/alerts/alertmanager", status_code=status.HTTP_202_ACCEPTED)
+async def receive_alertmanager_webhook(request: Request, payload: dict[str, Any]) -> dict[str, int]:
+    """Receive Alertmanager webhooks and forward them to realtime status clients."""
+    state = get_app_state(request)
+    raw_alerts = payload.get("alerts")
+    alerts = raw_alerts if isinstance(raw_alerts, list) else []
+    forwarded = 0
+
+    for raw_alert in alerts:
+        if not isinstance(raw_alert, dict):
+            continue
+        labels = _alert_dict(raw_alert.get("labels"))
+        annotations = _alert_dict(raw_alert.get("annotations"))
+        service_id = _alert_service_id(labels)
+        event = StatusEvent(
+            event_type="alertmanager_alert",
+            service_id=service_id,
+            payload={
+                "status": raw_alert.get("status"),
+                "receiver": payload.get("receiver"),
+                "group_key": payload.get("groupKey"),
+                "labels": labels,
+                "annotations": annotations,
+                "starts_at": raw_alert.get("startsAt"),
+                "ends_at": raw_alert.get("endsAt"),
+                "generator_url": raw_alert.get("generatorURL"),
+                "fingerprint": raw_alert.get("fingerprint"),
+            },
+        )
+        await state.websocket_manager.broadcast(event.model_dump(mode="json"))
+        forwarded += 1
+        logger.warning(
+            "alertmanager_alert_received",
+            extra=log_extra(
+                alertname=labels.get("alertname"),
+                service_id=service_id,
+                severity=labels.get("severity"),
+                alert_status=raw_alert.get("status"),
+            ),
+        )
+
+    return {"received": len(alerts), "forwarded": forwarded}
+
+
+def _alert_dict(value: object) -> dict[str, str]:
+    """Return Alertmanager label or annotation maps as string dictionaries."""
+    if not isinstance(value, dict):
+        return {}
+    return {str(key): str(item) for key, item in value.items()}
+
+
+def _alert_service_id(labels: dict[str, str]) -> str:
+    """Extract a stable service identifier from Alertmanager labels."""
+    return labels.get("service_id") or labels.get("instance") or "unknown"
 
 
 @app.get("/metrics")

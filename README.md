@@ -161,12 +161,21 @@ Services:
 - API: `http://127.0.0.1:8000`
 - API docs: `http://127.0.0.1:8000/docs`
 - Prometheus: `http://127.0.0.1:9090`
+- Alertmanager: `http://127.0.0.1:9093`
 - Grafana: `http://127.0.0.1:3000` (`admin` / `admin`)
 - Jaeger UI: `http://127.0.0.1:16686`
 - RabbitMQ UI: `http://127.0.0.1:15672` (`resilience` / `resilience`)
 
 Grafana automatically provisions the `Microservice Resilience Platform` dashboard with API latency, API error rate,
 health check error rate, service inventory, cache activity, and circuit breaker state panels.
+
+Prometheus loads circuit breaker alert rules from `monitoring/prometheus/rules/resilience-alerts.yml` and sends alerts
+to Alertmanager. Alertmanager forwards firing and resolved circuit breaker notifications to the API webhook at
+`/alerts/alertmanager`, where they are logged and broadcast to connected `ws://127.0.0.1:8000/ws/status` clients.
+Configured alerts:
+
+- `CircuitBreakerOpen`: fires when `circuit_breaker_state == 2` for 1 minute.
+- `CircuitBreakerOpenedRecently`: fires when `circuit_breaker_open_total` increases within 5 minutes.
 
 OpenTelemetry tracing is enabled in Docker Compose with OTLP export to Jaeger.
 After calling API endpoints, traces appear in Jaeger under:

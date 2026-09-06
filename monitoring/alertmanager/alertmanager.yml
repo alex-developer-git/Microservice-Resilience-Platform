@@ -1,0 +1,25 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: resilience-platform-webhook
+  group_by:
+    - alertname
+    - service_id
+  group_wait: 10s
+  group_interval: 1m
+  repeat_interval: 15m
+
+receivers:
+  - name: resilience-platform-webhook
+    webhook_configs:
+      - url: http://app:8000/alerts/alertmanager
+        send_resolved: true
+
+inhibit_rules:
+  - source_matchers:
+      - alertname="CircuitBreakerOpen"
+    target_matchers:
+      - alertname="CircuitBreakerOpenedRecently"
+    equal:
+      - service_id

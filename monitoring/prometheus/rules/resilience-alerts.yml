@@ -1,0 +1,21 @@
+groups:
+  - name: resilience-platform.rules
+    rules:
+      - alert: CircuitBreakerOpen
+        expr: circuit_breaker_state == 2
+        for: 1m
+        labels:
+          severity: critical
+          component: circuit_breaker
+        annotations:
+          summary: Circuit breaker is open for service {{ $labels.service_id }}
+          description: Circuit breaker for service {{ $labels.service_id }} has remained OPEN for more than 1 minute.
+
+      - alert: CircuitBreakerOpenedRecently
+        expr: increase(circuit_breaker_open_total[5m]) > 0
+        labels:
+          severity: warning
+          component: circuit_breaker
+        annotations:
+          summary: Circuit breaker opened for service {{ $labels.service_id }}
+          description: Circuit breaker for service {{ $labels.service_id }} entered OPEN state within the last 5 minutes.

@@ -140,12 +140,28 @@ services:
       - "9090:9090"
     volumes:
       - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/rules:/etc/prometheus/rules:ro
       - prometheus_data:/prometheus
     depends_on:
       app:
         condition: service_healthy
+      alertmanager:
+        condition: service_started
     networks:
       - backend
+      - observability
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    networks:
       - observability
 
   grafana:
@@ -210,6 +226,7 @@ volumes:
   rabbitmq_data:
   prometheus_data:
   grafana_data:
+  alertmanager_data:
   loki_data:
   promtail_positions:
 
