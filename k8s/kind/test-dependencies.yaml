@@ -142,6 +142,11 @@ spec:
       containers:
         - name: rabbitmq
           image: rabbitmq:3-alpine
+          env:
+            - name: RABBITMQ_DEFAULT_USER
+              value: resilience
+            - name: RABBITMQ_DEFAULT_PASS
+              value: resilience
           ports:
             - name: amqp
               containerPort: 5672

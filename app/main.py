@@ -167,7 +167,11 @@ async def _record_service_inventory(state: AppState) -> None:
     """Refresh service inventory business metrics."""
     if not hasattr(state.metrics, "record_service_inventory"):
         return
-    services = await state.repository.list()
+    try:
+        services = await state.repository.list()
+    except Exception as exc:
+        logger.warning("service_inventory_metric_failed", extra=log_extra(error=str(exc)))
+        return
     state.metrics.record_service_inventory(
         total=len(services),
         enabled=sum(1 for service in services if service.enabled),

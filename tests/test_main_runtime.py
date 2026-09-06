@@ -4,7 +4,7 @@ import httpx
 import pytest
 
 from app.config import Settings
-from app.main import AppState, build_state, lifespan
+from app.main import AppState, _record_service_inventory, build_state, lifespan
 from tests.fakes import FakeEventPublisher, FakeHealthCache, FakeServiceRepository
 
 
@@ -110,3 +110,33 @@ async def test_lifespan_starts_and_stops_dependencies(monkeypatch: pytest.Monkey
         "cache.close",
         "repository.close",
     ]
+
+
+@pytest.mark.asyncio
+async def test_record_service_inventory_does_not_fail_startup_when_repository_list_fails() -> None:
+    class Repository(FakeServiceRepository):
+        async def list(self) -> list[object]:
+            raise RuntimeError("services table is not ready")
+
+    class Metrics:
+        def __init__(self) -> None:
+            self.recorded = False
+
+        def record_service_inventory(self, total: int, enabled: int) -> None:
+            self.recorded = True
+
+    metrics = Metrics()
+    state = AppState(
+        repository=Repository(),
+        cache=FakeHealthCache(),
+        events=FakeEventPublisher(),
+        circuit_breakers=SimpleNamespace(),
+        metrics=metrics,
+        websocket_manager=SimpleNamespace(),
+        http_client=httpx.AsyncClient(),
+    )
+
+    await _record_service_inventory(state)
+    await state.http_client.aclose()
+
+    assert metrics.recorded is False
