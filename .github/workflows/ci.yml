@@ -313,10 +313,12 @@ jobs:
             --output /dev/null \
             --write-out '%{http_code}' \
             https://127.0.0.1:8443/register-service)
+          register_cache_status=$(grep -i '^x-cache-status:' register.headers | tr -d '\r' || true)
+          register_rate_limit=$(grep -i '^x-ratelimit-limit:' register.headers | tr -d '\r' || true)
           if [ "${register_status}" != "422" ] || \
              ! grep -qi '^x-cache-status: BYPASS' register.headers || \
              ! grep -qi '^x-ratelimit-limit: 2' register.headers; then
-            echo "::error title=Registration cache bypass failed::Expected 422 with BYPASS and live rate-limit headers for /register-service"
+            echo "::error title=Registration cache bypass failed::Expected HTTP 422, BYPASS and rate limit 2; got HTTP ${register_status}, '${register_cache_status:-missing}', '${register_rate_limit:-missing}'"
             cat register.headers
             exit 1
           fi
@@ -354,12 +356,15 @@ jobs:
             sleep 2
           done
 
-          first_status=$(curl --silent --show-error --header 'Content-Type: application/json' --data '{}' \
+          first_status=$(curl --silent --show-error --header 'Content-Type: application/json' \
+            --header 'X-Forwarded-For: 198.51.100.25' --data '{}' \
             --output /dev/null --write-out "%{http_code}" http://127.0.0.1:8080/register-service)
-          second_status=$(curl --silent --show-error --header 'Content-Type: application/json' --data '{}' \
+          second_status=$(curl --silent --show-error --header 'Content-Type: application/json' \
+            --header 'X-Forwarded-For: 198.51.100.25' --data '{}' \
             --output /dev/null --write-out "%{http_code}" http://127.0.0.1:8080/register-service)
           third_status=$(curl --silent --show-error --dump-header rate-limit.headers --output rate-limit.json \
-            --header 'Content-Type: application/json' --data '{}' --write-out "%{http_code}" \
+            --header 'Content-Type: application/json' --header 'X-Forwarded-For: 198.51.100.25' \
+            --data '{}' --write-out "%{http_code}" \
             http://127.0.0.1:8080/register-service)
 
           if [ "${first_status}" != "422" ] || [ "${second_status}" != "422" ] || [ "${third_status}" != "429" ]; then

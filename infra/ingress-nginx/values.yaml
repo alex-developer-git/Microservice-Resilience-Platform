@@ -64,6 +64,11 @@ controller:
         "1:0:0:0:0:0:0" 0;
       }
 
+      map $resilience_skip_cache $resilience_cache_status {
+        default "BYPASS";
+        0 $upstream_cache_status;
+      }
+
       map $resilience_static_cache_candidate $resilience_rate_limit_limit {
         default "";
         0 $upstream_http_x_ratelimit_limit;
@@ -102,4 +107,4 @@ controller:
       add_header X-RateLimit-Limit $resilience_rate_limit_limit always;
       add_header X-RateLimit-Remaining $resilience_rate_limit_remaining always;
       add_header X-RateLimit-Reset $resilience_rate_limit_reset always;
-      add_header X-Cache-Status $upstream_cache_status always;
+      add_header X-Cache-Status $resilience_cache_status always;
