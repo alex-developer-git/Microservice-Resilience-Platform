@@ -201,6 +201,38 @@ jobs:
           cat port-forward.log
           exit 1
 
+      - name: Verify Redis-backed application rate limiting
+        run: |
+          kubectl -n resilience-platform port-forward svc/resilience-platform-api 8080:80 > rate-limit-port-forward.log 2>&1 &
+          port_forward_pid=$!
+          trap "kill ${port_forward_pid}" EXIT
+
+          for attempt in {1..30}; do
+            if curl -fsS http://127.0.0.1:8080/health > /dev/null; then
+              break
+            fi
+            if [ "${attempt}" -eq 30 ]; then
+              cat rate-limit-port-forward.log
+              exit 1
+            fi
+            sleep 2
+          done
+
+          first_status=$(curl --silent --show-error --output /dev/null --write-out "%{http_code}" \
+            http://127.0.0.1:8080/health/rate-limit-ci-missing)
+          second_status=$(curl --silent --show-error --output /dev/null --write-out "%{http_code}" \
+            http://127.0.0.1:8080/health/rate-limit-ci-missing)
+          third_status=$(curl --silent --show-error --dump-header rate-limit.headers --output rate-limit.json \
+            --write-out "%{http_code}" http://127.0.0.1:8080/health/rate-limit-ci-missing)
+
+          test "${first_status}" = "404"
+          test "${second_status}" = "404"
+          test "${third_status}" = "429"
+          grep -qi '^retry-after:' rate-limit.headers
+          grep -qi '^x-ratelimit-limit: 2' rate-limit.headers
+          grep -q 'rate_limit_exceeded' rate-limit.json
+          curl -fsS http://127.0.0.1:8080/health > /dev/null
+
       - name: Show Kubernetes diagnostics
         if: failure()
         run: |

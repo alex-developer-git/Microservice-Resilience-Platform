@@ -4,7 +4,7 @@ import logging
 import pytest
 
 from app import database
-from app.config import _env_bool, _env_environment, get_settings
+from app.config import _env_bool, _env_environment, _env_positive_int, get_settings
 from app.logging_config import JsonFormatter, configure_logging, log_extra
 
 
@@ -40,6 +40,14 @@ def test_get_settings_reads_environment(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setenv("OTEL_ENABLED", "true")
     monkeypatch.setenv("OTEL_SERVICE_NAME", "svc")
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel:4317")
+    monkeypatch.setenv("RATE_LIMIT_ENABLED", "true")
+    monkeypatch.setenv("RATE_LIMIT_FAIL_OPEN", "false")
+    monkeypatch.setenv("RATE_LIMIT_TRUST_FORWARDED_FOR", "true")
+    monkeypatch.setenv("RATE_LIMIT_GLOBAL_REQUESTS", "90")
+    monkeypatch.setenv("RATE_LIMIT_WINDOW_SECONDS", "30")
+    monkeypatch.setenv("RATE_LIMIT_REGISTER_SERVICE_REQUESTS", "8")
+    monkeypatch.setenv("RATE_LIMIT_HEALTH_CHECK_REQUESTS", "45")
+    monkeypatch.setenv("RATE_LIMIT_CIRCUIT_BREAKER_REQUESTS", "6")
 
     settings = get_settings()
     get_settings.cache_clear()
@@ -54,6 +62,28 @@ def test_get_settings_reads_environment(monkeypatch: pytest.MonkeyPatch) -> None
     assert settings.otel_enabled is True
     assert settings.otel_service_name == "svc"
     assert settings.otel_exporter_otlp_endpoint == "http://otel:4317"
+    assert settings.rate_limit_enabled is True
+    assert settings.rate_limit_fail_open is False
+    assert settings.rate_limit_trust_forwarded_for is True
+    assert settings.rate_limit_global_requests == 90
+    assert settings.rate_limit_window_seconds == 30
+    assert settings.rate_limit_register_service_requests == 8
+    assert settings.rate_limit_health_check_requests == 45
+    assert settings.rate_limit_circuit_breaker_requests == 6
+
+
+def test_positive_integer_environment_helper_rejects_invalid_limits(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify rate limit values cannot be zero, negative, or non-numeric."""
+    monkeypatch.delenv("RATE_LIMIT_TEST", raising=False)
+    assert _env_positive_int("RATE_LIMIT_TEST", 12) == 12
+
+    monkeypatch.setenv("RATE_LIMIT_TEST", "0")
+    with pytest.raises(ValueError, match="positive integer"):
+        _env_positive_int("RATE_LIMIT_TEST", 12)
+
+    monkeypatch.setenv("RATE_LIMIT_TEST", "invalid")
+    with pytest.raises(ValueError):
+        _env_positive_int("RATE_LIMIT_TEST", 12)
 
 
 def test_database_helpers(monkeypatch: pytest.MonkeyPatch) -> None:

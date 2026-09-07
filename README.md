@@ -6,7 +6,7 @@ FastAPI service for registering external services, checking health status, apply
 
 - Python 3.11+
 - PostgreSQL
-- Redis for health check result caching
+- Redis for health check result caching and distributed application rate limiting
 - Celery broker, for example Redis or RabbitMQ
 
 ## Setup
@@ -22,6 +22,9 @@ $env:DATABASE_URL="postgresql+asyncpg://user:password@localhost:5432/resilience"
 $env:REDIS_URL="redis://localhost:6379/0"
 $env:CELERY_BROKER_URL="redis://localhost:6379/1"
 $env:CELERY_TASK_NAME="resilience_platform.process_event"
+$env:RATE_LIMIT_ENABLED="true"
+$env:RATE_LIMIT_GLOBAL_REQUESTS="120"
+$env:RATE_LIMIT_WINDOW_SECONDS="60"
 ```
 
 Apply database migrations:
@@ -74,6 +77,8 @@ Core Prometheus metrics:
 
 - `http_requests_total`
 - `http_request_duration_seconds`
+- `rate_limit_decisions_total`
+- `rate_limit_backend_errors_total`
 - `registered_services_total`
 - `monitored_services`
 - `enabled_services`
@@ -198,6 +203,29 @@ docker compose --profile logging up --build
 ```
 
 Promtail reads Docker container logs from stdout and forwards parsed JSON fields to Loki at `http://localhost:3100`.
+
+## Rate Limiting
+
+The API uses a Redis-backed token bucket shared by all application replicas. Global middleware limits public HTTP traffic,
+while FastAPI dependencies apply stricter limits to service registration, external health checks, and manual circuit
+breaker trips. `/health`, `/ready`, and `/metrics` are excluded so Kubernetes probes and Prometheus scraping remain
+available.
+
+Successful limited responses include `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset`. Rejected
+requests return HTTP `429`, a structured `rate_limit_exceeded` error, and `Retry-After`.
+
+Rate limiting is configured with:
+
+- `RATE_LIMIT_ENABLED` and `RATE_LIMIT_FAIL_OPEN`
+- `RATE_LIMIT_TRUST_FORWARDED_FOR`, enabled only behind a trusted reverse proxy
+- `RATE_LIMIT_GLOBAL_REQUESTS` and `RATE_LIMIT_WINDOW_SECONDS`
+- `RATE_LIMIT_REGISTER_SERVICE_REQUESTS`
+- `RATE_LIMIT_HEALTH_CHECK_REQUESTS`
+- `RATE_LIMIT_CIRCUIT_BREAKER_REQUESTS`
+
+The Kubernetes Ingress adds a coarse per-IP connection and request limit per ingress-nginx controller replica before
+traffic reaches the application. The Redis-backed application limit remains shared across pods when either the Deployment
+or Argo Rollout scales.
 
 ## Kubernetes Progressive Delivery
 

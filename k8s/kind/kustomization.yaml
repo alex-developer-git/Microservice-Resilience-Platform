@@ -25,6 +25,12 @@ patches:
       - op: replace
         path: /data/OTEL_ENABLED
         value: "false"
+      - op: replace
+        path: /data/RATE_LIMIT_GLOBAL_REQUESTS
+        value: "10"
+      - op: replace
+        path: /data/RATE_LIMIT_HEALTH_CHECK_REQUESTS
+        value: "2"
   - target:
       kind: Deployment
       name: resilience-platform-api

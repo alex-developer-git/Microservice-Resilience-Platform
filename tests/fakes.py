@@ -1,7 +1,9 @@
 from datetime import datetime, timedelta, timezone
+from time import time
 
 from app.errors import DuplicateServiceError, ServiceNotFoundError
 from app.models import HealthCheckResult, ServiceCreate, ServiceRecord, StatusEvent
+from app.rate_limiter import RateLimitDecision
 
 
 class FakeEventPublisher:
@@ -52,6 +54,46 @@ class FakeHealthCache:
     async def close(self) -> None:
         """Clear all cached fake results."""
         self._items.clear()
+
+
+class FakeRateLimiter:
+    def __init__(self, *, unavailable: bool = False) -> None:
+        """Create a deterministic in-memory rate limiter for API tests."""
+        self.unavailable = unavailable
+        self.calls: list[tuple[str, str, int, int]] = []
+        self._remaining: dict[tuple[str, str], int] = {}
+        self.closed = False
+
+    async def check(
+        self,
+        client_id: str,
+        scope: str,
+        *,
+        limit: int,
+        window_seconds: int,
+    ) -> RateLimitDecision:
+        """Consume one item from a fixed test bucket."""
+        self.calls.append((client_id, scope, limit, window_seconds))
+        if self.unavailable:
+            raise RuntimeError("rate limiter unavailable")
+
+        key = (client_id, scope)
+        remaining = self._remaining.get(key, limit)
+        allowed = remaining > 0
+        if allowed:
+            remaining -= 1
+            self._remaining[key] = remaining
+        return RateLimitDecision(
+            allowed=allowed,
+            limit=limit,
+            remaining=remaining,
+            retry_after_seconds=window_seconds if not allowed else 0,
+            reset_at=int(time()) + window_seconds,
+        )
+
+    async def close(self) -> None:
+        """Record that the fake limiter was closed."""
+        self.closed = True
 
 
 class FakeServiceRepository:

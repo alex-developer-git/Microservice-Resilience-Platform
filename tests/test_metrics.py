@@ -15,6 +15,9 @@ def test_autoscaling_probe_metric_is_initialized_at_zero() -> None:
 def test_metric_store_renders_prometheus_client_metrics() -> None:
     metrics = MetricStore()
     metrics.record_http_request("GET", "/health/{service_id}", 200, 0.123)
+    metrics.record_rate_limit_decision("GET:/health/{service_id}", allowed=True)
+    metrics.record_rate_limit_decision("GET:/health/{service_id}", allowed=False)
+    metrics.record_rate_limit_backend_error("global")
     metrics.record_service_inventory(total=3, enabled=2)
     metrics.record_service_registered()
     metrics.record_manual_trip("svc-1", CircuitState.CLOSED)
@@ -37,6 +40,9 @@ def test_metric_store_renders_prometheus_client_metrics() -> None:
 
     assert 'http_requests_total{method="GET",path="/health/{service_id}",status_code="200"} 1.0' in output
     assert 'http_request_duration_seconds_count{method="GET",path="/health/{service_id}"} 1.0' in output
+    assert 'rate_limit_decisions_total{decision="allowed",scope="GET:/health/{service_id}"} 1.0' in output
+    assert 'rate_limit_decisions_total{decision="rejected",scope="GET:/health/{service_id}"} 1.0' in output
+    assert 'rate_limit_backend_errors_total{scope="global"} 1.0' in output
     assert "monitored_services 3.0" in output
     assert "enabled_services 2.0" in output
     assert "registered_services_total 1.0" in output

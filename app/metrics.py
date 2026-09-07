@@ -19,6 +19,18 @@ class MetricStore:
             ["method", "path"],
             registry=self._registry,
         )
+        self._rate_limit_decisions = Counter(
+            "rate_limit_decisions",
+            "Number of application rate limit decisions by scope and outcome.",
+            ["scope", "decision"],
+            registry=self._registry,
+        )
+        self._rate_limit_backend_errors = Counter(
+            "rate_limit_backend_errors",
+            "Number of failed application rate limit backend checks by scope.",
+            ["scope"],
+            registry=self._registry,
+        )
         self._service_registered = Counter(
             "registered_services",
             "Number of registered services.",
@@ -103,6 +115,15 @@ class MetricStore:
         """Record HTTP request count and latency."""
         self._http_requests.labels(method=method, path=path, status_code=str(status_code)).inc()
         self._http_request_duration_seconds.labels(method=method, path=path).observe(duration_seconds)
+
+    def record_rate_limit_decision(self, scope: str, allowed: bool) -> None:
+        """Record whether an application rate limit check allowed a request."""
+        decision = "allowed" if allowed else "rejected"
+        self._rate_limit_decisions.labels(scope=scope, decision=decision).inc()
+
+    def record_rate_limit_backend_error(self, scope: str) -> None:
+        """Record a failed rate limit backend check."""
+        self._rate_limit_backend_errors.labels(scope=scope).inc()
 
     def record_service_inventory(self, total: int, enabled: int) -> None:
         """Record current service inventory gauges."""

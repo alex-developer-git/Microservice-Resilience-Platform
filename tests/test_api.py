@@ -1,7 +1,8 @@
 from fastapi.testclient import TestClient
 
 from app.main import app
-from tests.fakes import FakeServiceRepository
+from app.rate_limiter import RateLimitPolicy
+from tests.fakes import FakeRateLimiter, FakeServiceRepository
 
 
 def test_container_health_endpoint() -> None:
@@ -127,3 +128,116 @@ def test_unknown_service_returns_structured_error(api_state: object) -> None:
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "service_not_found"
+
+
+def test_route_rate_limit_returns_429_with_retry_headers(api_state: object) -> None:
+    """Verify an expensive route uses its stricter shared rate limit."""
+    limiter = FakeRateLimiter()
+    api_state.rate_limiter = limiter
+    api_state.rate_limit_policy = RateLimitPolicy(
+        enabled=True,
+        global_requests=10,
+        health_check_requests=2,
+        window_seconds=60,
+    )
+    app.state.container = api_state
+    client = TestClient(app)
+
+    first = client.get("/health/missing")
+    second = client.get("/health/missing")
+    rejected = client.get("/health/missing")
+
+    assert first.status_code == 404
+    assert second.status_code == 404
+    assert first.headers["X-RateLimit-Limit"] == "2"
+    assert first.headers["X-RateLimit-Remaining"] == "1"
+    assert rejected.status_code == 429
+    assert rejected.json() == {"error": {"code": "rate_limit_exceeded", "message": "Too many requests"}}
+    assert rejected.headers["Retry-After"] == "60"
+    assert rejected.headers["X-RateLimit-Limit"] == "2"
+    assert rejected.headers["X-RateLimit-Remaining"] == "0"
+    assert rejected.headers["X-RateLimit-Reset"]
+    assert rejected.headers["X-Correlation-ID"]
+
+    metrics_response = client.get("/metrics")
+    assert 'rate_limit_decisions_total{decision="rejected",scope="GET:/health/{service_id}"} 1.0' in (
+        metrics_response.text
+    )
+
+
+def test_global_rate_limit_applies_to_public_routes(api_state: object) -> None:
+    """Verify middleware enforces the default limit before a public route runs."""
+    api_state.rate_limiter = FakeRateLimiter()
+    api_state.rate_limit_policy = RateLimitPolicy(enabled=True, global_requests=2)
+    app.state.container = api_state
+    client = TestClient(app)
+
+    first = client.get("/openapi.json")
+    assert first.status_code == 200
+    assert first.headers["X-RateLimit-Limit"] == "2"
+    assert first.headers["X-RateLimit-Remaining"] == "1"
+    assert client.get("/openapi.json").status_code == 200
+    rejected = client.get("/openapi.json")
+
+    assert rejected.status_code == 429
+    assert rejected.headers["X-RateLimit-Limit"] == "2"
+    assert rejected.headers["Retry-After"] == "60"
+    metrics_response = client.get("/metrics")
+    assert 'http_requests_total{method="GET",path="/openapi.json",status_code="429"} 1.0' in metrics_response.text
+
+
+def test_operational_endpoints_are_exempt_from_rate_limiting(api_state: object) -> None:
+    """Verify probes and metrics remain available after client traffic is limited."""
+    limiter = FakeRateLimiter()
+    api_state.rate_limiter = limiter
+    api_state.rate_limit_policy = RateLimitPolicy(enabled=True, global_requests=1)
+    app.state.container = api_state
+    client = TestClient(app)
+
+    assert client.get("/health").status_code == 200
+    assert client.get("/health").status_code == 200
+    assert client.get("/ready").status_code == 200
+    assert client.get("/metrics").status_code == 200
+    assert limiter.calls == []
+
+
+def test_rate_limit_backend_failure_can_fail_open(api_state: object) -> None:
+    """Verify a configured fail-open policy keeps the API available."""
+    api_state.rate_limiter = FakeRateLimiter(unavailable=True)
+    api_state.rate_limit_policy = RateLimitPolicy(enabled=True, fail_open=True)
+    app.state.container = api_state
+    client = TestClient(app)
+
+    response = client.get("/health/missing")
+
+    assert response.status_code == 404
+    metrics_response = client.get("/metrics")
+    assert 'rate_limit_backend_errors_total{scope="global"} 1.0' in metrics_response.text
+
+
+def test_rate_limit_backend_failure_can_fail_closed(api_state: object) -> None:
+    """Verify a configured fail-closed policy returns a structured service error."""
+    api_state.rate_limiter = FakeRateLimiter(unavailable=True)
+    api_state.rate_limit_policy = RateLimitPolicy(enabled=True, fail_open=False)
+    app.state.container = api_state
+    client = TestClient(app)
+
+    response = client.get("/health/missing")
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "rate_limit_backend_unavailable"
+    assert response.headers["X-Correlation-ID"]
+
+
+def test_rate_limit_can_use_a_trusted_forwarded_client_ip(api_state: object) -> None:
+    """Verify forwarded client identity is parsed only when explicitly trusted."""
+    limiter = FakeRateLimiter()
+    api_state.rate_limiter = limiter
+    api_state.rate_limit_policy = RateLimitPolicy(enabled=True, trust_forwarded_for=True)
+    app.state.container = api_state
+    client = TestClient(app)
+
+    response = client.get("/openapi.json", headers={"X-Forwarded-For": "203.0.113.10, 10.0.0.1"})
+
+    assert response.status_code == 200
+    assert limiter.calls[0][0] == "203.0.113.10"

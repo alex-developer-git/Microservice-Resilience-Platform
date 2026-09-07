@@ -5,7 +5,8 @@ import pytest
 
 from app.config import Settings
 from app.main import AppState, _record_service_inventory, build_state, lifespan
-from tests.fakes import FakeEventPublisher, FakeHealthCache, FakeServiceRepository
+from app.rate_limiter import RedisRateLimiter
+from tests.fakes import FakeEventPublisher, FakeHealthCache, FakeRateLimiter, FakeServiceRepository
 
 
 def test_build_state_requires_runtime_dependencies() -> None:
@@ -52,6 +53,8 @@ def test_build_state_wires_runtime_components(monkeypatch: pytest.MonkeyPatch) -
     )
 
     assert isinstance(state, AppState)
+    assert isinstance(state.rate_limiter, RedisRateLimiter)
+    assert state.rate_limit_policy.enabled is True
     assert created == {
         "database_url": "postgresql://postgres/app",
         "redis_url": "redis://redis:6379/0",
@@ -71,6 +74,7 @@ async def test_lifespan_starts_and_stops_dependencies(monkeypatch: pytest.Monkey
         metrics=SimpleNamespace(),
         websocket_manager=SimpleNamespace(),
         http_client=httpx.AsyncClient(),
+        rate_limiter=FakeRateLimiter(),
     )
 
     async def init_repository() -> None:
@@ -85,12 +89,16 @@ async def test_lifespan_starts_and_stops_dependencies(monkeypatch: pytest.Monkey
     async def close_cache() -> None:
         calls.append("cache.close")
 
+    async def close_rate_limiter() -> None:
+        calls.append("rate_limiter.close")
+
     async def close_repository() -> None:
         calls.append("repository.close")
 
     state.repository.init = init_repository
     state.events.close = close_events
     state.http_client.aclose = close_http_client
+    state.rate_limiter.close = close_rate_limiter
     state.cache.close = close_cache
     state.repository.close = close_repository
 
@@ -107,6 +115,7 @@ async def test_lifespan_starts_and_stops_dependencies(monkeypatch: pytest.Monkey
         "repository.init",
         "events.close",
         "http_client.close",
+        "rate_limiter.close",
         "cache.close",
         "repository.close",
     ]
