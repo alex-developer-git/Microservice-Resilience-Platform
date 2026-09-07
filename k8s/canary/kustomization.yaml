@@ -10,6 +10,7 @@ resources:
   - ../service.yaml
   - ../networkpolicy.yaml
   - ../ingress.yaml
+  - ../ingress-static.yaml
   - ../migration-job.yaml
   - ../cleanup-cronjob.yaml
   - rollout.yaml

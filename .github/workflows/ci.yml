@@ -103,8 +103,13 @@ jobs:
       - name: Set up Helm
         uses: azure/setup-helm@v4
 
-      - name: Validate monitoring chart values
+      - name: Validate Helm chart values
         run: |
+          helm template ingress-nginx ingress-nginx \
+            --repo https://kubernetes.github.io/ingress-nginx \
+            --version 4.15.1 \
+            --namespace ingress-nginx \
+            --values infra/ingress-nginx/values.yaml > /dev/null
           helm template kube-prometheus-stack oci://ghcr.io/prometheus-community/charts/kube-prometheus-stack \
             --version 89.2.3 \
             --namespace monitoring \
@@ -161,11 +166,26 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
       - name: Create kind cluster
         uses: helm/kind-action@v1
         with:
           cluster_name: resilience-platform
           wait: 120s
+
+      - name: Install ingress-nginx
+        run: |
+          helm upgrade --install ingress-nginx ingress-nginx \
+            --repo https://kubernetes.github.io/ingress-nginx \
+            --version 4.15.1 \
+            --namespace ingress-nginx \
+            --create-namespace \
+            --values infra/ingress-nginx/values.yaml \
+            --set controller.service.type=ClusterIP \
+            --wait \
+            --timeout 5m
 
       - name: Build application image
         run: docker build -t resilience-platform:latest .
@@ -184,6 +204,111 @@ jobs:
 
       - name: Wait for API deployment
         run: kubectl -n resilience-platform rollout status deployment/resilience-platform-api --timeout=240s
+
+      - name: Verify NGINX static response caching
+        run: |
+          kubectl -n ingress-nginx port-forward svc/ingress-nginx-controller 8443:443 > ingress-port-forward.log 2>&1 &
+          port_forward_pid=$!
+          trap "kill ${port_forward_pid}" EXIT
+
+          for attempt in {1..30}; do
+            if curl --fail --insecure --silent --show-error \
+              --header 'Host: api.resilience-platform.local' \
+              https://127.0.0.1:8443/health > /dev/null; then
+              break
+            fi
+            if [ "${attempt}" -eq 30 ]; then
+              cat ingress-port-forward.log
+              exit 1
+            fi
+            sleep 2
+          done
+
+          assert_cached() {
+            path=$1
+            name=$2
+            curl --fail --insecure --silent --show-error \
+              --header 'Host: api.resilience-platform.local' \
+              --dump-header "${name}-first.headers" \
+              --output "${name}-first.body" \
+              "https://127.0.0.1:8443${path}"
+            curl --fail --insecure --silent --show-error \
+              --header 'Host: api.resilience-platform.local' \
+              --dump-header "${name}-second.headers" \
+              --output "${name}-second.body" \
+              "https://127.0.0.1:8443${path}"
+
+            if ! grep -qi '^x-cache-status: MISS' "${name}-first.headers" || \
+               ! grep -qi '^x-cache-status: HIT' "${name}-second.headers" || \
+               ! cmp -s "${name}-first.body" "${name}-second.body"; then
+              echo "::error title=Static cache mismatch::Expected MISS then HIT with identical bodies for ${path}"
+              cat "${name}-first.headers"
+              cat "${name}-second.headers"
+              exit 1
+            fi
+
+            first_correlation=$(grep -i '^x-correlation-id:' "${name}-first.headers" | tr -d '\r')
+            second_correlation=$(grep -i '^x-correlation-id:' "${name}-second.headers" | tr -d '\r')
+            if [ -z "${first_correlation}" ] || [ -z "${second_correlation}" ] || \
+               [ "${first_correlation}" = "${second_correlation}" ] || \
+               grep -qi '^x-ratelimit-' "${name}-first.headers" || \
+               grep -qi '^x-ratelimit-' "${name}-second.headers"; then
+              echo "::error title=Cached metadata mismatch::Correlation IDs must remain per-request and rate-limit headers must not be cached for ${path}"
+              cat "${name}-first.headers"
+              cat "${name}-second.headers"
+              exit 1
+            fi
+          }
+
+          assert_cached /openapi.json openapi
+          assert_cached /docs docs
+          assert_cached /redoc redoc
+
+          curl --fail --insecure --silent --show-error \
+            --header 'Host: api.resilience-platform.local' \
+            --header 'Authorization: Bearer cache-bypass-test' \
+            --dump-header authorized-static.headers \
+            --output /dev/null \
+            https://127.0.0.1:8443/openapi.json
+          if ! grep -qi '^x-cache-status: BYPASS' authorized-static.headers; then
+            echo "::error title=Authenticated cache bypass failed::Expected BYPASS for an authorized static request"
+            cat authorized-static.headers
+            exit 1
+          fi
+
+          curl --fail --insecure --silent --show-error \
+            --header 'Host: api.resilience-platform.local' \
+            --dump-header health-first.headers \
+            --output /dev/null \
+            https://127.0.0.1:8443/health
+          curl --fail --insecure --silent --show-error \
+            --header 'Host: api.resilience-platform.local' \
+            --dump-header health-second.headers \
+            --output /dev/null \
+            https://127.0.0.1:8443/health
+          if ! grep -qi '^x-cache-status: BYPASS' health-first.headers || \
+             ! grep -qi '^x-cache-status: BYPASS' health-second.headers; then
+            echo "::error title=Dynamic cache bypass failed::Expected BYPASS for /health"
+            cat health-first.headers
+            cat health-second.headers
+            exit 1
+          fi
+
+          register_status=$(curl --insecure --silent --show-error \
+            --header 'Host: api.resilience-platform.local' \
+            --header 'Content-Type: application/json' \
+            --data '{}' \
+            --dump-header register.headers \
+            --output /dev/null \
+            --write-out '%{http_code}' \
+            https://127.0.0.1:8443/register-service)
+          if [ "${register_status}" != "422" ] || \
+             ! grep -qi '^x-cache-status: BYPASS' register.headers || \
+             ! grep -qi '^x-ratelimit-limit: 2' register.headers; then
+            echo "::error title=Registration cache bypass failed::Expected 422 with BYPASS and live rate-limit headers for /register-service"
+            cat register.headers
+            exit 1
+          fi
 
       - name: Smoke test API endpoints
         run: |
@@ -251,6 +376,7 @@ jobs:
           kubectl -n resilience-platform logs deployment/rabbitmq --tail=200 || true
           kubectl -n resilience-platform logs deployment/resilience-platform-api -c api --tail=200 || true
           kubectl -n resilience-platform logs deployment/resilience-platform-api -c wait-for-dependencies --tail=200 || true
+          kubectl -n ingress-nginx logs deployment/ingress-nginx-controller --tail=200 || true
 
   build:
     name: Build and Publish Image

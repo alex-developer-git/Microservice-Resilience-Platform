@@ -1,0 +1,102 @@
+controller:
+  # Keep arbitrary per-Ingress NGINX snippets disabled. Cache policy is owned by
+  # the controller configuration below and cannot be changed by an Ingress.
+  allowSnippetAnnotations: false
+  config:
+    http-snippet: |
+      proxy_cache_path /tmp/resilience-platform-static-cache
+        levels=1:2
+        keys_zone=resilience_platform_static:1m
+        max_size=32m
+        inactive=30m
+        use_temp_path=off;
+
+      map "$request_method:$host:$uri" $resilience_static_cache_candidate {
+        default 0;
+        "GET:api.resilience-platform.local:/docs" 1;
+        "HEAD:api.resilience-platform.local:/docs" 1;
+        "GET:api.resilience-platform.local:/redoc" 1;
+        "HEAD:api.resilience-platform.local:/redoc" 1;
+        "GET:api.resilience-platform.local:/openapi.json" 1;
+        "HEAD:api.resilience-platform.local:/openapi.json" 1;
+      }
+
+      map $http_x_correlation_id $resilience_correlation_id {
+        default $request_id;
+        "~^[A-Za-z0-9_.:/-]{1,128}$" $http_x_correlation_id;
+      }
+
+      map $http_authorization $resilience_cache_has_authorization {
+        default 1;
+        "" 0;
+      }
+
+      map $http_cookie $resilience_cache_has_cookie {
+        default 1;
+        "" 0;
+      }
+
+      map $args $resilience_cache_has_query {
+        default 1;
+        "" 0;
+      }
+
+      map $http_range $resilience_cache_has_range {
+        default 1;
+        "" 0;
+      }
+
+      map $http_cache_control $resilience_cache_has_control {
+        default 1;
+        "" 0;
+      }
+
+      map $http_pragma $resilience_cache_has_pragma {
+        default 1;
+        "" 0;
+      }
+
+      map "$resilience_static_cache_candidate:$resilience_cache_has_authorization:$resilience_cache_has_cookie:$resilience_cache_has_query:$resilience_cache_has_range:$resilience_cache_has_control:$resilience_cache_has_pragma" $resilience_skip_cache {
+        default 1;
+        "1:0:0:0:0:0:0" 0;
+      }
+
+      map $resilience_static_cache_candidate $resilience_rate_limit_limit {
+        default "";
+        0 $upstream_http_x_ratelimit_limit;
+      }
+
+      map $resilience_static_cache_candidate $resilience_rate_limit_remaining {
+        default "";
+        0 $upstream_http_x_ratelimit_remaining;
+      }
+
+      map $resilience_static_cache_candidate $resilience_rate_limit_reset {
+        default "";
+        0 $upstream_http_x_ratelimit_reset;
+      }
+
+    location-snippet: |
+      proxy_set_header X-Correlation-ID $resilience_correlation_id;
+      proxy_cache resilience_platform_static;
+      proxy_cache_methods GET HEAD;
+      proxy_cache_convert_head on;
+      proxy_cache_key "$scheme$host$uri";
+      proxy_cache_bypass $resilience_skip_cache;
+      proxy_no_cache $resilience_skip_cache $upstream_http_set_cookie;
+      proxy_cache_valid 200 5m;
+      proxy_cache_lock on;
+      proxy_cache_lock_timeout 5s;
+      proxy_cache_revalidate on;
+      proxy_cache_background_update on;
+      proxy_cache_use_stale updating;
+      proxy_hide_header X-Correlation-ID;
+      proxy_hide_header X-RateLimit-Limit;
+      proxy_hide_header X-RateLimit-Remaining;
+      proxy_hide_header X-RateLimit-Reset;
+      proxy_hide_header X-Cache-Status;
+      add_header X-Correlation-ID $resilience_correlation_id always;
+      add_header X-RateLimit-Limit $resilience_rate_limit_limit always;
+      add_header X-RateLimit-Remaining $resilience_rate_limit_remaining always;
+      add_header X-RateLimit-Reset $resilience_rate_limit_reset always;
+      add_header X-Cache-Status $upstream_cache_status always;

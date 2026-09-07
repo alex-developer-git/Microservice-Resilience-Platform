@@ -227,6 +227,29 @@ The Kubernetes Ingress adds a coarse per-IP connection and request limit per ing
 traffic reaches the application. The Redis-backed application limit remains shared across pods when either the Deployment
 or Argo Rollout scales.
 
+## NGINX Static Response Cache
+
+Install the pinned ingress-nginx controller with the repository cache policy before applying the application manifests:
+
+```powershell
+helm upgrade --install ingress-nginx ingress-nginx `
+  --repo https://kubernetes.github.io/ingress-nginx `
+  --version 4.15.1 `
+  --namespace ingress-nginx `
+  --create-namespace `
+  --values infra/ingress-nginx/values.yaml
+```
+
+The controller caches successful `GET` and `HEAD` responses for the exact `/openapi.json`, `/docs`, and `/redoc` paths
+for five minutes. Requests carrying authorization, cookies, query parameters, ranges, `Cache-Control`, or `Pragma`
+headers bypass the cache. Non-200 responses and responses that set cookies or forbid caching are not stored.
+
+Dynamic endpoints such as `/health`, `/register-service`, `/circuit-breaker`, and `/ws/status` always bypass the cache.
+`X-Cache-Status` reports `MISS`, `HIT`, or `BYPASS`. Cache files are capped at 32 MiB and are local to each ingress-nginx
+controller pod. Arbitrary per-Ingress snippet annotations remain disabled; the allowlist and cache directives are managed
+centrally by `infra/ingress-nginx/values.yaml`. Correlation IDs remain unique per request, and client-specific
+`X-RateLimit-*` values are never replayed from a cached static response.
+
 ## Kubernetes Progressive Delivery
 
 The standard Kubernetes manifests are in `k8s/`.

@@ -1,7 +1,7 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: resilience-platform-api
+  name: resilience-platform-static
   namespace: resilience-platform
   labels:
     app.kubernetes.io/name: resilience-platform
@@ -10,8 +10,9 @@ metadata:
     nginx.ingress.kubernetes.io/limit-burst-multiplier: "2"
     nginx.ingress.kubernetes.io/limit-connections: "40"
     nginx.ingress.kubernetes.io/limit-rps: "20"
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-buffering: "on"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
 spec:
   ingressClassName: nginx
   tls:
@@ -22,28 +23,21 @@ spec:
     - host: api.resilience-platform.local
       http:
         paths:
-          - path: /register-service
-            pathType: Exact
-            backend:
-              service:
-                name: resilience-platform-api
-                port:
-                  name: http
-          - path: /health
+          - path: /docs
             pathType: Prefix
             backend:
               service:
                 name: resilience-platform-api
                 port:
                   name: http
-          - path: /circuit-breaker
+          - path: /redoc
             pathType: Prefix
             backend:
               service:
                 name: resilience-platform-api
                 port:
                   name: http
-          - path: /ws/status
+          - path: /openapi.json
             pathType: Exact
             backend:
               service:
