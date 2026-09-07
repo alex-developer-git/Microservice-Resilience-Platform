@@ -3,6 +3,9 @@ controller:
   # the controller configuration below and cannot be changed by an Ingress.
   allowSnippetAnnotations: false
   config:
+    # The cache policy maps use long composite keys. The default 64-byte bucket
+    # is too small for them and prevents NGINX from starting.
+    map-hash-bucket-size: "128"
     http-snippet: |
       proxy_cache_path /tmp/nginx/resilience-platform-static-cache
         levels=1:2
