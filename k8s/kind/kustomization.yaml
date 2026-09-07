@@ -31,6 +31,9 @@ patches:
       - op: replace
         path: /data/RATE_LIMIT_HEALTH_CHECK_REQUESTS
         value: "2"
+      - op: replace
+        path: /data/RATE_LIMIT_REGISTER_SERVICE_REQUESTS
+        value: "2"
   - target:
       kind: Deployment
       name: resilience-platform-api

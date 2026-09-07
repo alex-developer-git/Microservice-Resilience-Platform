@@ -218,19 +218,27 @@ jobs:
             sleep 2
           done
 
-          first_status=$(curl --silent --show-error --output /dev/null --write-out "%{http_code}" \
-            http://127.0.0.1:8080/health/rate-limit-ci-missing)
-          second_status=$(curl --silent --show-error --output /dev/null --write-out "%{http_code}" \
-            http://127.0.0.1:8080/health/rate-limit-ci-missing)
+          first_status=$(curl --silent --show-error --header 'Content-Type: application/json' --data '{}' \
+            --output /dev/null --write-out "%{http_code}" http://127.0.0.1:8080/register-service)
+          second_status=$(curl --silent --show-error --header 'Content-Type: application/json' --data '{}' \
+            --output /dev/null --write-out "%{http_code}" http://127.0.0.1:8080/register-service)
           third_status=$(curl --silent --show-error --dump-header rate-limit.headers --output rate-limit.json \
-            --write-out "%{http_code}" http://127.0.0.1:8080/health/rate-limit-ci-missing)
+            --header 'Content-Type: application/json' --data '{}' --write-out "%{http_code}" \
+            http://127.0.0.1:8080/register-service)
 
-          test "${first_status}" = "404"
-          test "${second_status}" = "404"
-          test "${third_status}" = "429"
-          grep -qi '^retry-after:' rate-limit.headers
-          grep -qi '^x-ratelimit-limit: 2' rate-limit.headers
-          grep -q 'rate_limit_exceeded' rate-limit.json
+          if [ "${first_status}" != "422" ] || [ "${second_status}" != "422" ] || [ "${third_status}" != "429" ]; then
+            echo "::error title=Rate limit status mismatch::Expected 422,422,429; got ${first_status},${second_status},${third_status}"
+            cat rate-limit.json
+            exit 1
+          fi
+          if ! grep -qi '^retry-after:' rate-limit.headers || \
+             ! grep -qi '^x-ratelimit-limit: 2' rate-limit.headers || \
+             ! grep -q 'rate_limit_exceeded' rate-limit.json; then
+            echo "::error title=Rate limit response mismatch::Missing expected headers or error body"
+            cat rate-limit.headers
+            cat rate-limit.json
+            exit 1
+          fi
           curl -fsS http://127.0.0.1:8080/health > /dev/null
 
       - name: Show Kubernetes diagnostics

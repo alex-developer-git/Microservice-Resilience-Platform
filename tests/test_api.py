@@ -165,6 +165,27 @@ def test_route_rate_limit_returns_429_with_retry_headers(api_state: object) -> N
     )
 
 
+def test_route_rate_limit_runs_before_request_validation(api_state: object) -> None:
+    """Verify invalid requests still consume the route-specific registration budget."""
+    api_state.rate_limiter = FakeRateLimiter()
+    api_state.rate_limit_policy = RateLimitPolicy(
+        enabled=True,
+        global_requests=10,
+        register_service_requests=2,
+    )
+    app.state.container = api_state
+    client = TestClient(app)
+
+    first = client.post("/register-service", json={})
+    second = client.post("/register-service", json={})
+    rejected = client.post("/register-service", json={})
+
+    assert first.status_code == 422
+    assert second.status_code == 422
+    assert rejected.status_code == 429
+    assert rejected.headers["X-RateLimit-Limit"] == "2"
+
+
 def test_global_rate_limit_applies_to_public_routes(api_state: object) -> None:
     """Verify middleware enforces the default limit before a public route runs."""
     api_state.rate_limiter = FakeRateLimiter()
