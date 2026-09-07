@@ -177,15 +177,26 @@ jobs:
 
       - name: Install ingress-nginx
         run: |
-          helm upgrade --install ingress-nginx ingress-nginx \
-            --repo https://kubernetes.github.io/ingress-nginx \
-            --version 4.15.1 \
-            --namespace ingress-nginx \
-            --create-namespace \
-            --values infra/ingress-nginx/values.yaml \
-            --set controller.service.type=ClusterIP \
-            --wait \
-            --timeout 5m
+          if ! helm upgrade --install ingress-nginx ingress-nginx \
+              --repo https://kubernetes.github.io/ingress-nginx \
+              --version 4.15.1 \
+              --namespace ingress-nginx \
+              --create-namespace \
+              --values infra/ingress-nginx/values.yaml \
+              --set controller.service.type=ClusterIP \
+              --set controller.admissionWebhooks.enabled=false \
+              --wait \
+              --timeout 7m; then
+            kubectl -n ingress-nginx get all -o wide || true
+            kubectl -n ingress-nginx describe pods || true
+            kubectl -n ingress-nginx logs deployment/ingress-nginx-controller \
+              --all-containers=true --tail=200 > ingress-controller.log 2>&1 || true
+            cat ingress-controller.log
+            grep -Ei '\[emerg\]|permission denied|invalid|error' ingress-controller.log \
+              | tail -1 \
+              | sed -e 's/%/%25/g' -e 's/^/::error title=Ingress controller log::/' || true
+            exit 1
+          fi
 
       - name: Build application image
         run: docker build -t resilience-platform:latest .
